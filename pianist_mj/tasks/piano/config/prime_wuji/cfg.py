@@ -1,10 +1,15 @@
-"""Velocity task configuration.
+"""Unitree G1 velocity environment configurations."""
 
-This module provides a factory function to create a base velocity task config.
-Robot-specific configurations call the factory and customize as needed.
-"""
-
-import numpy as np
+from mjlab.envs import ManagerBasedRlEnvCfg
+from mjlab.envs.mdp.actions import JointPositionActionCfg
+from mjlab.managers.manager_term_config import RewardTermCfg
+from mjlab.sensor import ContactMatch, ContactSensorCfg
+from mjlab.rl import (
+    RslRlOnPolicyRunnerCfg,
+    RslRlPpoActorCriticCfg,
+    RslRlPpoAlgorithmCfg,
+)
+from pianist_mj.robots.prime.prime_wuji_constants import get_prime_wuji_robot_cfg
 from pathlib import Path
 
 import mujoco
@@ -29,7 +34,9 @@ from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab.viewer import ViewerConfig
 from mjlab.utils.os import update_assets
 
-from pianist_mj.tasks.reach import mdp
+from pianist_mj.robots.prime.prime_wuji_constants import PRIME_WUJI_FINGER_BODY_NAMES, PRIME_WUJI_PALM_BODY_NAMES
+
+from pianist_mj.tasks.piano import mdp  # noqa: F401, F403
 
 
 PIANO_XML: Path = (
@@ -58,52 +65,21 @@ def make_env_cfg() -> ManagerBasedRlEnvCfg:
     ##
 
     commands: dict[str, CommandTermCfg] = {
-        "left_pose": mdp.UniformPoseCommandCfg(
-            asset_name="robot",
-            body_names=("left_wrist_pitch",),
-            resampling_time_range=(1.0, 4.0),
-            pose_range={
-                "pos_x": (0.35, 0.65),
-                "pos_y": (-0.2, 0.6),
-                "pos_z": (0.15, 0.5),
-                "roll": (
-                    (0.5 * np.pi) - (0.25 * np.pi),
-                    (0.5 * np.pi) + (0.25 * np.pi),
-                ),
-                "pitch": (
-                    -(0.5 * np.pi) - (0.25 * np.pi),
-                    -(0.5 * np.pi) + (0.25 * np.pi),
-                ),
-                "yaw": (
-                    -(0.25 * np.pi),
-                    (0.25 * np.pi),
-                ),
-            },
+        "keypress": mdp.KeyPressCommandCfg(
+            # song_name="./source/pianist/data/music/pig_single_finger/nocturne_op9_no_2-1.npz",
+            song_name="data/music/etude/twinkle_twinkle_rousseau.npz",
+            piano_name="piano",
+            robot_name="robot",
+            robot_finger_body_names=PRIME_WUJI_FINGER_BODY_NAMES,
+            robot_palm_body_names=PRIME_WUJI_PALM_BODY_NAMES,
+            desired_palm_pose=[(0.707, 0, 0.707, 0), (0.707, 0, 0.707, 0)],
+            song_speedup=1,
+            right_hand_only=False,
+            random_restart=True,
+            lookahead_steps=12,
+            skip_stride=1,
             debug_vis=True,
-        ),
-        "right_pose": mdp.UniformPoseCommandCfg(
-            asset_name="robot",
-            body_names=("right_wrist_pitch",),
-            resampling_time_range=(1.0, 4.0),
-            pose_range={
-                "pos_x": (0.35, 0.65),
-                "pos_y": (-0.6, 0.2),
-                "pos_z": (0.15, 0.5),
-                "roll": (
-                    -(0.5 * np.pi) - (0.25 * np.pi),
-                    -(0.5 * np.pi) + (0.25 * np.pi),
-                ),
-                "pitch": (
-                    -(0.5 * np.pi) - (0.25 * np.pi),
-                    -(0.5 * np.pi) + (0.25 * np.pi),
-                ),
-                "yaw": (
-                    -(0.25 * np.pi),
-                    (0.25 * np.pi),
-                ),
-            },
-            debug_vis=True,
-        ),
+        )
     }
 
     ##
@@ -111,14 +87,14 @@ def make_env_cfg() -> ManagerBasedRlEnvCfg:
     ##
 
     policy_terms = {
-        "left_pose_command": ObservationTermCfg(
-            func=mdp.generated_commands,
-            params={"command_name": "left_pose"},
-        ),
-        "right_pose_command": ObservationTermCfg(
-            func=mdp.generated_commands,
-            params={"command_name": "right_pose"},
-        ),
+        # "left_pose_command": ObservationTermCfg(
+        #     func=mdp.generated_commands,
+        #     params={"command_name": "left_pose"},
+        # ),
+        # "right_pose_command": ObservationTermCfg(
+        #     func=mdp.generated_commands,
+        # params={"command_name": "right_pose"},
+        # ),
         "joint_pos": ObservationTermCfg(
             func=mdp.joint_pos_rel,
             noise=Unoise(n_min=-0.01, n_max=0.01),
@@ -155,7 +131,7 @@ def make_env_cfg() -> ManagerBasedRlEnvCfg:
         "joint_pos": JointPositionActionCfg(
             asset_name="robot",
             actuator_names=(".*",),
-            scale=0.5,
+            scale=0.25,
             preserve_order=True,
             use_default_offset=True,
         )
@@ -166,22 +142,22 @@ def make_env_cfg() -> ManagerBasedRlEnvCfg:
     ##
 
     rewards = {
-        "left_position_tracking": RewardTermCfg(
-            func=mdp.position_command_error,
-            params={
-                "command_name": "left_pose",
-                "asset_cfg": SceneEntityCfg("robot", body_names="left_wrist_pitch"),
-            },
-            weight=-2.0,
-        ),
-        "right_position_tracking": RewardTermCfg(
-            func=mdp.position_command_error,
-            params={
-                "command_name": "right_pose",
-                "asset_cfg": SceneEntityCfg("robot", body_names="right_wrist_pitch"),
-            },
-            weight=-2.0,
-        ),
+        # "left_position_tracking": RewardTermCfg(
+        #     func=mdp.position_command_error,
+        #     params={
+        #         "command_name": "left_pose",
+        #         "asset_cfg": SceneEntityCfg("robot", body_names="left_wrist_pitch"),
+        #     },
+        #     weight=-2.0,
+        # ),
+        # "right_position_tracking": RewardTermCfg(
+        #     func=mdp.position_command_error,
+        #     params={
+        #         "command_name": "right_pose",
+        #         "asset_cfg": SceneEntityCfg("robot", body_names="right_wrist_pitch"),
+        #     },
+        #     weight=-2.0,
+        # ),
         "action_rate": RewardTermCfg(
             func=mdp.action_rate_l2,
             weight=-0.05,
@@ -275,4 +251,73 @@ def make_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         decimation=4,
         episode_length_s=20.0,
+    )
+
+
+def piano_prime_wuji_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+    """Create Prime reach environment configuration."""
+    cfg = make_env_cfg()
+
+    cfg.scene.entities["robot"] = get_prime_wuji_robot_cfg()
+
+    self_collision_cfg = ContactSensorCfg(
+        name="self_collision",
+        primary=ContactMatch(mode="subtree", pattern="base", entity="robot"),
+        secondary=ContactMatch(mode="subtree", pattern="base", entity="robot"),
+        fields=("found",),
+        reduce="none",
+        num_slots=1,
+    )
+    cfg.scene.sensors = (self_collision_cfg, )
+
+    cfg.viewer.body_name = "base"
+
+    # Apply play mode overrides.
+    if play:
+        # Effectively infinite episode length.
+        cfg.episode_length_s = int(1e9)
+
+        cfg.observations["policy"].enable_corruption = False
+        cfg.events.pop("push_robot", None)
+
+        if cfg.scene.terrain is not None:
+            if cfg.scene.terrain.terrain_generator is not None:
+                cfg.scene.terrain.terrain_generator.curriculum = False
+                cfg.scene.terrain.terrain_generator.num_cols = 5
+                cfg.scene.terrain.terrain_generator.num_rows = 5
+                cfg.scene.terrain.terrain_generator.border_width = 10.0
+
+    return cfg
+
+
+def piano_prime_wuji_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
+    """Create RL runner configuration for Unitree G1 velocity task."""
+    return RslRlOnPolicyRunnerCfg(
+        num_steps_per_env=24,
+        max_iterations=2000,
+        save_interval=200,
+        experiment_name="piano_prime_wuji",
+        run_name="",
+        policy=RslRlPpoActorCriticCfg(
+            init_noise_std=1.0,
+            actor_obs_normalization=False,
+            critic_obs_normalization=False,
+            actor_hidden_dims=(128, 64, 64),
+            critic_hidden_dims=(128, 64, 64),
+            activation="elu",
+        ),
+        algorithm=RslRlPpoAlgorithmCfg(
+            value_loss_coef=1.0,
+            use_clipped_value_loss=True,
+            clip_param=0.2,
+            entropy_coef=0.0005,
+            num_learning_epochs=8,
+            num_mini_batches=4,
+            learning_rate=1.0e-3,
+            schedule="adaptive",
+            gamma=0.99,
+            lam=0.95,
+            desired_kl=0.01,
+            max_grad_norm=1.0,
+        ),
     )
