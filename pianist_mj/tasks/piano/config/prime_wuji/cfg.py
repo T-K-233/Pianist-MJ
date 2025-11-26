@@ -35,6 +35,7 @@ from mjlab.viewer import ViewerConfig
 from mjlab.utils.os import update_assets
 
 from pianist_mj.robots.prime.prime_wuji_constants import PRIME_WUJI_FINGER_BODY_NAMES, PRIME_WUJI_PALM_BODY_NAMES
+from pianist_mj.robots.piano_articulation import PianoArticulationCfg
 
 from pianist_mj.tasks.piano import mdp  # noqa: F401, F403
 
@@ -142,37 +143,107 @@ def make_env_cfg() -> ManagerBasedRlEnvCfg:
     ##
 
     rewards = {
-        # "left_position_tracking": RewardTermCfg(
-        #     func=mdp.position_command_error,
-        #     params={
-        #         "command_name": "left_pose",
-        #         "asset_cfg": SceneEntityCfg("robot", body_names="left_wrist_pitch"),
-        #     },
-        #     weight=-2.0,
-        # ),
-        # "right_position_tracking": RewardTermCfg(
-        #     func=mdp.position_command_error,
-        #     params={
-        #         "command_name": "right_pose",
-        #         "asset_cfg": SceneEntityCfg("robot", body_names="right_wrist_pitch"),
-        #     },
-        #     weight=-2.0,
-        # ),
+        "key_on": RewardTermCfg(
+            func=mdp.key_on_reward,
+            params={
+                "command_name": "keypress",
+                "piano_cfg": SceneEntityCfg("piano"),
+            },
+            weight=0.1,
+        ),
+        "key_position_error": RewardTermCfg(
+            func=mdp.key_position_error_l1,
+            params={
+                "command_name": "keypress",
+                "piano_cfg": SceneEntityCfg("piano"),
+            },
+            weight=-1.0,
+        ),
+        "minimize_fingertip_to_goal_distance_coarse": RewardTermCfg(
+            func=mdp.fingertip_to_goal_distance_reward,
+            params={
+                "command_name": "keypress",
+                "distance_threshold": 0.01,
+                "std": 0.1,
+            },
+            weight=0.5,
+        ),
+        "minimize_fingertip_to_goal_distance_fine": RewardTermCfg(
+            func=mdp.fingertip_to_goal_distance_reward,
+            params={
+                "command_name": "keypress",
+                "distance_threshold": 0.01,
+                "std": 0.02,
+            },
+            weight=1.0,
+        ),
         "action_rate": RewardTermCfg(
             func=mdp.action_rate_l2,
-            weight=-0.05,
-        ),
-        "joint_vel": RewardTermCfg(
-            func=mdp.joint_vel_l2,
-            weight=-1e-4,
+            weight=-2e-4,
         ),
         "joint_energy": RewardTermCfg(
             func=mdp.joint_energy_l1,
-            weight=-1e-4,
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*"])},
+            weight=-5.0e-5,
         ),
         "joint_pos_limits": RewardTermCfg(
             func=mdp.joint_pos_limits,
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*"])},
             weight=-1.0,
+        ),
+        "joint_deviation_fingers": RewardTermCfg(
+            func=mdp.joint_deviation_l1,
+            params={        
+                "asset_cfg": SceneEntityCfg(
+                    "robot",
+                    joint_names=[  # excluding joint 2 to encourage lifting
+                        "(left|right)_finger1_joint(3|4)",
+                        "(left|right)_finger(2|3|4|5)_joint(1|3|4)",
+                    ],
+                )
+            },
+            weight=-0.05,
+        ),
+        "joint_deviation_arm": RewardTermCfg(
+            func=mdp.joint_deviation_l1,
+            params={
+                "asset_cfg": SceneEntityCfg(
+                    "robot",
+                    joint_names=["(left|right)_(shoulder|elbow|wrist)_.*"],
+                )
+            },
+            weight=-5e-3,
+        ),
+        # "undesired_contacts": RewardTermCfg(
+        #     func=mdp.undesired_contacts,
+        #     params={
+        #         "threshold": 1.0,
+        #         "sensor_cfg": SceneEntityCfg(
+        #             "contact_forces",
+        #             body_names=["(left|right)_finger(1|2|3|4|5)_link(1|2|3)"],
+        #         ),
+        #     },
+        #     weight=-0.5,
+        # ),
+        # "contact_forces": RewardTermCfg(
+        #     func=mdp.contact_forces,
+        #     params={
+        #         "threshold": 50.0,
+        #         "sensor_cfg": SceneEntityCfg(
+        #             "contact_forces",
+        #             body_names=["(left|right)_finger(1|2|3|4|5)_tip_link"],
+        #         ),
+        #     },
+        #     weight=-1e-4,
+        # ),
+        "palm_orientation": RewardTermCfg(
+            func=mdp.palm_orientation_l2,
+            params={
+                "command_name": "keypress",
+                "asset_cfg": SceneEntityCfg("robot", body_names=["(left|right)_wrist_pitch"]),
+                "std": 0.3,
+            },
+            weight=0.2,
         ),
     }
 
@@ -216,7 +287,7 @@ def make_env_cfg() -> ManagerBasedRlEnvCfg:
             num_envs=4096,
             extent=2.0,
             entities={
-                "piano": EntityCfg(
+                "piano": PianoArticulationCfg(
                     init_state=EntityCfg.InitialStateCfg(
                         pos=(0.25, 0.0, 0.61),
                         rot=(0.0, 0.0, 0.0, 1.0),
@@ -261,7 +332,7 @@ def piano_prime_wuji_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.scene.entities["robot"] = get_prime_wuji_robot_cfg()
 
     self_collision_cfg = ContactSensorCfg(
-        name="self_collision",
+        name="contact_forces",
         primary=ContactMatch(mode="subtree", pattern="base", entity="robot"),
         secondary=ContactMatch(mode="subtree", pattern="base", entity="robot"),
         fields=("found",),

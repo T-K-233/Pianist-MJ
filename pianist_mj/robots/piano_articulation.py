@@ -1,6 +1,8 @@
 import torch
+import mujoco
+import mujoco_warp as mjwarp
 
-from mjlab.envs import ManagerBasedRlEnv
+from mjlab.entity import Entity, EntityCfg
 
 
 NUM_KEYS = 88
@@ -57,13 +59,19 @@ BLACK_OFFSET_FROM_WHITE = 0.0125  # 12.5 mm
 KEY_SPRINGREF = -0.01
 
 
-class PianoArticulation():
-    def __init__(self, env: ManagerBasedRlEnv):
-        super().__init__()
+class PianoArticulation(Entity):
+    def __init__(self, cfg: "PianoArticulationCfg"):
+        super().__init__(cfg)
 
-        self.env = env
-
-        self._initialized = False
+    def initialize(
+        self,
+        mj_model: mujoco.MjModel,
+        model: mjwarp.Model,
+        data: mjwarp.Data,
+        device: str,
+    ) -> None:
+        super().initialize(mj_model, model, data, device)
+        self.device = device
 
         # we need to do these initializations manually after the scene is created.
         self.key_names = []
@@ -73,14 +81,13 @@ class PianoArticulation():
                 self.key_names.append(f"white_{key_name}")
             else:
                 self.key_names.append(f"black_{key_name}")
-        key_body_indices, _ = self.env.scene["piano"].find_bodies([key_name.replace("_joint", "") for key_name in self.key_names], preserve_order=True)
-        key_joint_indices, _ = self.env.scene["piano"].find_joints([key_name.replace("_joint", "").replace("_key", "_joint") for key_name in self.key_names], preserve_order=True)
-
+        key_body_indices, _ = self.find_bodies([key_name.replace("_joint", "") for key_name in self.key_names], preserve_order=True)
+        key_joint_indices, _ = self.find_joints([key_name.replace("_joint", "").replace("_key", "_joint") for key_name in self.key_names], preserve_order=True)
         # ensure these are 1D tensors
-        self._key_body_indices = torch.tensor(key_body_indices, device=self.env.device)
-        self._key_joint_indices = torch.tensor(key_joint_indices, device=self.env.device)
+        self._key_body_indices = torch.tensor(key_body_indices, device=self.device)
+        self._key_joint_indices = torch.tensor(key_joint_indices, device=self.device)
 
-        self._key_contact_offsets = torch.zeros(self.env.scene["piano"].num_joints, 3, device=self.env.device)
+        self._key_contact_offsets = torch.zeros(self.num_joints, 3, device=self.device)
 
         # specify the contact position to be at 85% of the key length
         self._key_contact_offsets[WHITE_KEY_INDICES, 0] += -0.85 * WHITE_KEY_TOTAL_LENGTH
@@ -89,7 +96,6 @@ class PianoArticulation():
 
         # gives an upward force when the key is at rest
         self.num_joints = 88
-        self.device = self.env.device
 
         spring_ref_position = torch.zeros(1, self.num_joints, device=self.device)
         spring_ref_position[:] = KEY_SPRINGREF
@@ -100,7 +106,6 @@ class PianoArticulation():
         # self.synth.start()
         # self.prev_pressed_keys = []
         # self.midi_offset = 21
-        self._initialized = True
 
     @property
     def key_positions(self) -> torch.Tensor:
@@ -139,3 +144,7 @@ class PianoArticulation():
 
         if not self._initialized:
             return
+
+
+class PianoArticulationCfg(EntityCfg):
+    class_type: type = PianoArticulation

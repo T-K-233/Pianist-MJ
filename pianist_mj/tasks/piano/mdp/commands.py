@@ -59,8 +59,7 @@ class KeyPressCommand(CommandTerm):
         self.song.speedup(self.cfg.song_speedup)
 
         # extract the robot and body index for which the command is generated
-        # HACK TODO
-        self.piano = PianoArticulation(env)
+        self.piano: PianoArticulation = env.scene[self.cfg.piano_name]
         # self.piano.post_scene_creation_init()  # cannot find a better place to call init
 
         if self.cfg.robot_name:
